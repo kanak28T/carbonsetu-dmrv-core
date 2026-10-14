@@ -161,7 +161,20 @@ contract KisanCredit {
 
         tokenCounter += 1;
 
-        emit TokenMinted(tokenId, farmerId, co2Tonnes, ndviScore, gpsLat, gpsLon);
+        // Fix: emit via internal helper that reads from storage so the 6 calldata
+        // string variables are no longer live on the stack during the emit call.
+        // This resolves the "Stack too deep" error in the legacy Solidity codegen.
+        _emitMinted(tokenId);
+    }
+
+    /**
+     * @dev Internal helper — reads ParcelRecord fields from storage so the
+     *      calldata params of mintToken() are already off the stack.
+     *      Prevents "Stack too deep" with 6 string calldata params + locals.
+     */
+    function _emitMinted(uint256 tokenId) private {
+        ParcelRecord storage r = _records[tokenId];
+        emit TokenMinted(tokenId, r.farmerId, r.co2Tonnes, r.ndviScore, r.gpsLat, r.gpsLon);
     }
 
     /**
