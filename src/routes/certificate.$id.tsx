@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Printer, Download, ExternalLink, Sprout, ShieldCheck } from "lucide-react";
 import { getPurchaseById } from "@/lib/db";
+import { CONFIG } from "@/lib/config";
 
 export const Route = createFileRoute("/certificate/$id")({
   component: CertificatePage,
@@ -153,7 +154,7 @@ function HashLink({ label, hash }: { label: string; hash: string | null }) {
     <div>
       <span className="font-semibold text-foreground/60">{label}: </span>
       <a
-        href={`https://polygonscan.com/tx/${hash}`}
+        href={`${CONFIG.blockchain.explorerUrl}/tx/${hash}`}
         target="_blank" rel="noreferrer"
         className="text-secondary font-mono text-xs hover:underline inline-flex items-center gap-1 break-all"
       >
