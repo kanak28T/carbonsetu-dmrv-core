@@ -130,10 +130,19 @@ export async function getWalletAddress(): Promise<string | null> {
   try {
     if (!window.ethereum) return null;
     const provider = new ethers.BrowserProvider(window.ethereum);
-    const accounts = await provider.send("eth_accounts", []);
+    // eth_requestAccounts triggers the MetaMask popup if not connected,
+    // and returns the already-connected account silently if it is connected.
+    const accounts = await provider.send("eth_requestAccounts", []);
     return accounts[0] ?? null;
   } catch {
-    return null;
+    // If user dismisses the popup, fall back to eth_accounts (no popup)
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const accounts = await provider.send("eth_accounts", []);
+      return accounts[0] ?? null;
+    } catch {
+      return null;
+    }
   }
 }
 
