@@ -1,6 +1,6 @@
 # CarbonSetu dMRV 🌱
 
-> Autonomous all-weather digital Measurement, Reporting & Verification (dMRV) pipeline for agricultural carbon credits — satellite-verified, blockchain-minted, UPI-settled.
+> Autonomous all-weather digital Measurement, Reporting & Verification (dMRV) pipeline for agricultural carbon credits, satellite-verified, blockchain-minted, UPI-settled.
 
 Indian farmers absorb millions of tonnes of CO₂ every year through their crops and get nothing for it. Corporations need verified carbon credits for ESG reporting but can't trust opaque international markets. CarbonSetu connects them directly: GPS-located farms, Copernicus Sentinel-2 satellite NDVI scoring, ERC-20 tokens on Polygon, and instant UPI settlement.
 
@@ -26,13 +26,13 @@ Buyer receives blockchain-verified impact certificate
 
 ## Features
 
-- **Farmer Dashboard** — Register farm, view NDVI score, CO₂ absorption, and estimated earnings in real time
-- **Satellite Pipeline** — Automated Copernicus API → NDVI calculation → Supabase update via n8n
-- **Blockchain** — Solidity ERC-20 contract (`GEPCC`) on Polygon Amoy · Ethers.js v6 · MetaMask
-- **Buyer Registry** — Browse verified carbon credits, filter by CO₂ / price, purchase via UPI
-- **Admin Panel** — Mint tokens, auto-mint on NDVI update, view all farmers / tokens / transactions
-- **Impact Certificate** — Printable, blockchain-verified certificate for ESG audit trail
-- **Realtime Updates** — Supabase Postgres realtime subscriptions refresh the dashboard automatically
+- **Farmer Dashboard** : Register farm, view NDVI score, CO₂ absorption, and estimated earnings in real time
+- **Satellite Pipeline** : Automated Copernicus API → NDVI calculation → Supabase update via n8n
+- **Blockchain** : Solidity ERC-20 contract (`GEPCC`) on Polygon Amoy · Ethers.js v6 · MetaMask
+- **Buyer Registry** : Browse verified carbon credits, filter by CO₂ / price, purchase via UPI
+- **Admin Panel** : Mint tokens, auto-mint on NDVI update, view all farmers / tokens / transactions
+- **Impact Certificate** : Printable, blockchain-verified certificate for ESG audit trail
+- **Realtime Updates** : Supabase Postgres realtime subscriptions refresh the dashboard automatically
 
 ---
 
