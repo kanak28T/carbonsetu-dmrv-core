@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
@@ -25,13 +26,35 @@ def health():
 # ── Main processing endpoint ──────────────────────────────────────────────────
 @app.route("/process", methods=["POST"])
 def process_farmer():
-    # force=True — parses JSON regardless of Content-Type header
-    # silent=True — returns None instead of raising 400 on parse failure
-    farmer = request.get_json(force=True, silent=True)
-    if not farmer or "id" not in farmer:
+    # ── Bulletproof body parsing ──────────────────────────────────────────────
+    # Try Flask's JSON parser first (handles Content-Type: application/json)
+    data = request.get_json(force=True, silent=True)
+
+    # Fallback: if get_json returned None/non-dict, parse raw bytes manually
+    if not isinstance(data, dict):
+        try:
+            data = json.loads(request.get_data(as_text=True))
+        except Exception:
+            data = {}
+
+    # n8n sometimes wraps payload as {"farmer": {...}, "access_token": "..."}
+    # or sends the farmer object directly — handle both shapes
+    farmer = (
+        data.get("farmer")          # n8n wrapped shape
+        or data.get("body", {}).get("farmer")  # double-wrapped
+        or data                      # flat shape (direct from api.ts)
+    )
+
+    # Normalise field names (id vs farmer_id, farm_area_acres vs land_area)
+    farmer_id      = farmer.get("id") or farmer.get("farmer_id")
+    farm_area      = farmer.get("farm_area_acres") or farmer.get("land_area") or 0
+    lat            = farmer.get("latitude")  or farmer.get("lat")
+    lon            = farmer.get("longitude") or farmer.get("lon")
+
+    if not farmer_id or not lat or not lon:
         return jsonify({
-            "error": "Missing farmer payload",
-            "received": str(request.data[:200])  # helps debug what actually arrived
+            "error":    "Missing required farmer fields (id, latitude, longitude)",
+            "received": str(request.get_data())[:300],
         }), 400
 
     missing = [k for k in ("COPERNICUS_USER", "COPERNICUS_PASS", "SUPABASE_KEY")
@@ -57,7 +80,6 @@ def process_farmer():
         return jsonify({"error": f"Copernicus auth failed: {str(e)}"}), 502
 
     # ── 2. Search Sentinel-2 catalogue for latest scene at farm GPS ───────────
-    lat, lon = farmer["latitude"], farmer["longitude"]
     search_url = (
         "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
         f"?$filter=Collection/Name eq 'SENTINEL-2' and "
@@ -87,15 +109,15 @@ def process_farmer():
     ndvi  = (band8 - band4) / (band8 + band4)   # = 0.5789
 
     # ── 4. CO₂ calculation ────────────────────────────────────────────────────
-    farm_area_hectares = farmer["farm_area_acres"] * 0.4047
+    farm_area_hectares = farm_area * 0.4047
     co2_tonnes = round(ndvi * farm_area_hectares * 10, 2)
 
-    print(f"[dMRV] farmer={farmer['id']}  NDVI={ndvi:.4f}  CO₂={co2_tonnes}t")
+    print(f"[dMRV] farmer={farmer_id}  NDVI={ndvi:.4f}  CO₂={co2_tonnes}t")
 
     # ── 5. Write back to Supabase ─────────────────────────────────────────────
     try:
         patch_resp = requests.patch(
-            f"{SUPABASE_URL}/rest/v1/farmers?id=eq.{farmer['id']}",
+            f"{SUPABASE_URL}/rest/v1/farmers?id=eq.{farmer_id}",
             headers={
                 "apikey":        SUPABASE_KEY,
                 "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -114,11 +136,11 @@ def process_farmer():
         return jsonify({"error": f"Supabase write failed: {str(e)}"}), 502
 
     return jsonify({
-        "status":    "success",
-        "farmer_id": farmer["id"],
-        "ndvi":      round(ndvi, 4),
+        "status":     "success",
+        "farmer_id":  farmer_id,
+        "ndvi":       round(ndvi, 4),
         "co2_tonnes": co2_tonnes,
-        "scene_id":  scene_id,
+        "scene_id":   scene_id,
     })
 
 
