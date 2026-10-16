@@ -9,7 +9,7 @@ export const CONFIG = {
   },
 
   blockchain: {
-    contractAddress: (import.meta.env.VITE_CONTRACT_ADDRESS ?? "0x049a443e7453F16C74229BF188B3A939e2753204") as string,
+    contractAddress: (import.meta.env.VITE_CONTRACT_ADDRESS ?? "") as string,
     chainId:         80002,
     chainIdHex:      "0x13882",
     chainName:       "Polygon Amoy Testnet",
