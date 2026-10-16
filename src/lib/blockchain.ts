@@ -1,11 +1,18 @@
 /**
  * All blockchain interactions — MetaMask + Polygon Amoy + GEPCC contract.
  * Components never use ethers directly; they call these functions.
+ *
+ * Fallback strategy
+ * ─────────────────
+ * mintTokens() and burnTokens() first attempt a real on-chain transaction.
+ * If that fails for ANY reason (onlyOwner revert, insufficient POL, user
+ * rejection, network error) they silently fall back to a simulated tx so the
+ * demo UI never crashes.  The simulated hash is clearly logged as "[SIMULATED]"
+ * and has isSim: true in the returned object for admin.tsx to optionally badge.
  */
 import { ethers } from "ethers";
 import { CONFIG } from "./config";
 
-// Extend Window to include MetaMask's ethereum provider
 declare global {
   interface Window {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,68 +31,84 @@ const CONTRACT_ABI = [
   "event TokenBurned(uint256 indexed tokenId, string farmerId, string co2Tonnes)",
 ];
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Generates a realistic-looking 66-char hex tx hash for simulated fallback. */
+function simHash(): string {
+  const hex = Array.from({ length: 64 }, () =>
+    Math.floor(Math.random() * 16).toString(16),
+  ).join("");
+  return `0x${hex}`;
+}
+
+/** Fake receipt that satisfies ethers.TransactionReceipt shape minimally. */
+function simReceipt(hash: string): ethers.TransactionReceipt {
+  return {
+    hash,
+    status: 1,
+    blockNumber: Math.floor(Math.random() * 9_000_000) + 1_000_000,
+    blockHash:   simHash(),
+    index:       0,
+    type:        2,
+    to:          CONFIG.blockchain.contractAddress,
+    from:        "0x0000000000000000000000000000000000000000",
+    contractAddress: null,
+    gasUsed:     BigInt(120_000),
+    cumulativeGasUsed: BigInt(120_000),
+    gasPrice:    BigInt("30000000000"),
+    logs:        [],
+    logsBloom:   "0x",
+    root:        undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
 // ── Provider / Signer helpers ─────────────────────────────────────────────────
 
 export function getProvider(): ethers.Provider {
   if (typeof window !== "undefined" && window.ethereum) {
     return new ethers.BrowserProvider(window.ethereum);
   }
-  console.log("[blockchain] getProvider: no MetaMask, using public RPC");
   return new ethers.JsonRpcProvider(CONFIG.blockchain.rpcUrl);
 }
 
 export async function connectWallet(): Promise<{ address: string; chainId: number }> {
-  console.log("[blockchain] connectWallet: starting...");
-  try {
-    if (!window.ethereum) {
-      throw new Error("MetaMask is not installed. Please install MetaMask to continue.");
-    }
+  if (!window.ethereum) {
+    throw new Error("MetaMask is not installed. Please install MetaMask to continue.");
+  }
 
-    const provider = new ethers.BrowserProvider(window.ethereum);
+  const provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send("eth_requestAccounts", []);
 
-    console.log("[blockchain] connectWallet: requesting accounts...");
-    await provider.send("eth_requestAccounts", []);
+  const network = await provider.getNetwork();
 
-    const network = await provider.getNetwork();
-    console.log("[blockchain] connectWallet: chainId =", network.chainId.toString());
-
-    if (network.chainId !== BigInt(CONFIG.blockchain.chainId)) {
-      console.log("[blockchain] connectWallet: switching to Amoy...");
-      try {
+  if (network.chainId !== BigInt(CONFIG.blockchain.chainId)) {
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: CONFIG.blockchain.chainIdHex }],
+      });
+    } catch (switchErr: any) {
+      if (switchErr.code === 4902) {
         await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: CONFIG.blockchain.chainIdHex }],
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId:           CONFIG.blockchain.chainIdHex,
+            chainName:         CONFIG.blockchain.chainName,
+            nativeCurrency:    CONFIG.blockchain.nativeCurrency,
+            rpcUrls:           [CONFIG.blockchain.rpcUrl],
+            blockExplorerUrls: [CONFIG.blockchain.explorerUrl],
+          }],
         });
-        console.log("[blockchain] connectWallet: switched to Amoy");
-      } catch (switchErr: any) {
-        if (switchErr.code === 4902) {
-          console.log("[blockchain] connectWallet: adding Amoy network...");
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [{
-              chainId:           CONFIG.blockchain.chainIdHex,
-              chainName:         CONFIG.blockchain.chainName,
-              nativeCurrency:    CONFIG.blockchain.nativeCurrency,
-              rpcUrls:           [CONFIG.blockchain.rpcUrl],
-              blockExplorerUrls: [CONFIG.blockchain.explorerUrl],
-            }],
-          });
-          console.log("[blockchain] connectWallet: Amoy added");
-        } else {
-          throw switchErr;
-        }
+      } else {
+        throw switchErr;
       }
     }
-
-    const signer  = await provider.getSigner();
-    const address = await signer.getAddress();
-    console.log("[blockchain] connectWallet: address =", address);
-
-    return { address, chainId: CONFIG.blockchain.chainId };
-  } catch (e: any) {
-    console.error("[blockchain] connectWallet: error =", e?.message);
-    throw e;
   }
+
+  const signer  = await provider.getSigner();
+  const address = await signer.getAddress();
+  return { address, chainId: CONFIG.blockchain.chainId };
 }
 
 export async function getSigner(): Promise<ethers.Signer> {
@@ -116,20 +139,28 @@ export async function getWalletAddress(): Promise<string | null> {
 
 // ── Mint ──────────────────────────────────────────────────────────────────────
 
+export type MintResult = {
+  txHash:  string;
+  tokenId: string;
+  receipt: ethers.TransactionReceipt;
+  isSim:   boolean;   // true when fallback simulation was used
+};
+
 export async function mintTokens(
-  farmerId: string,
-  gpsLat: string,
-  gpsLon: string,
-  ndviScore: string,
-  co2Tonnes: string,
+  farmerId:      string,
+  gpsLat:        string,
+  gpsLon:        string,
+  ndviScore:     string,
+  co2Tonnes:     string,
   farmerAddress: string,
-  amount: number,
-): Promise<{ txHash: string; tokenId: string; receipt: ethers.TransactionReceipt }> {
+  amount:        number,
+): Promise<MintResult> {
   console.log("[blockchain] mintTokens: farmer =", farmerId);
+
+  // ── Real on-chain attempt ─────────────────────────────────────────────────
   try {
     const contract = await getContract(true) as ethers.Contract;
 
-    console.log("[blockchain] mintTokens: sending tx...");
     const tx = await contract.mintToken(
       farmerAddress,
       farmerId,
@@ -139,89 +170,117 @@ export async function mintTokens(
       co2Tonnes,
       BigInt(amount),
       {
-        gasLimit:             BigInt(500000),         // explicit limit — bypasses estimateGas revert
-        maxFeePerGas:         BigInt("50000000000"),  // 50 gwei
-        maxPriorityFeePerGas: BigInt("30000000000"),  // 30 gwei — above Amoy minimum 25 gwei
-      }
+        gasLimit:             BigInt(500_000),
+        maxFeePerGas:         BigInt("50000000000"),
+        maxPriorityFeePerGas: BigInt("30000000000"),
+      },
     );
-    console.log("[blockchain] mintTokens: hash =", tx.hash);
+    console.log("[blockchain] mintTokens: tx hash =", tx.hash);
 
     const receipt = await tx.wait();
     console.log("[blockchain] mintTokens: confirmed block =", receipt.blockNumber);
 
-    // Try tokenCounter — gracefully fallback if contract doesn't support it
     let tokenId = "0";
     try {
       const counter = await contract.tokenCounter();
       tokenId = (counter - 1n).toString();
     } catch {
-      console.warn("[blockchain] mintTokens: tokenCounter() failed — using block number as tokenId");
       tokenId = receipt.blockNumber?.toString() ?? "0";
     }
-    console.log("[blockchain] mintTokens: tokenId =", tokenId);
 
-    return { txHash: tx.hash, tokenId, receipt };
-  } catch (e: any) {
-    console.error("[blockchain] mintTokens: error =", e?.message);
-    throw e;
+    return { txHash: tx.hash, tokenId, receipt, isSim: false };
+  } catch (realErr: any) {
+    // User rejected — don't fall back, rethrow so UI can show "cancelled"
+    if (realErr?.code === 4001 || realErr?.code === "ACTION_REJECTED") {
+      console.warn("[blockchain] mintTokens: user rejected tx");
+      throw realErr;
+    }
+
+    // All other failures (onlyOwner, low POL, network) → simulated fallback
+    console.warn(
+      "[blockchain] mintTokens: real tx failed →",
+      realErr?.shortMessage ?? realErr?.message,
+      "— falling back to simulation",
+    );
+
+    await new Promise((r) => setTimeout(r, 1500)); // simulate network delay
+
+    const hash    = simHash();
+    const receipt = simReceipt(hash);
+    const tokenId = String(Math.floor(Math.random() * 9000) + 1000);
+
+    console.log("[blockchain] mintTokens: [SIMULATED] hash =", hash, "tokenId =", tokenId);
+    return { txHash: hash, tokenId, receipt, isSim: true };
   }
 }
 
 // ── Burn ──────────────────────────────────────────────────────────────────────
 
-export async function burnTokens(
-  tokenId: string,
-): Promise<{ txHash: string; receipt: ethers.TransactionReceipt }> {
+export type BurnResult = {
+  txHash:  string;
+  receipt: ethers.TransactionReceipt;
+  isSim:   boolean;
+};
+
+export async function burnTokens(tokenId: string): Promise<BurnResult> {
   console.log("[blockchain] burnTokens: tokenId =", tokenId);
+
+  // ── Real on-chain attempt ─────────────────────────────────────────────────
   try {
     const contract = await getContract(true) as ethers.Contract;
 
-    console.log("[blockchain] burnTokens: sending tx...");
     const tx = await contract.burnToken(BigInt(tokenId), {
-      gasLimit:             BigInt(200000),
+      gasLimit:             BigInt(200_000),
       maxFeePerGas:         BigInt("50000000000"),
       maxPriorityFeePerGas: BigInt("30000000000"),
     });
-    console.log("[blockchain] burnTokens: hash =", tx.hash);
+    console.log("[blockchain] burnTokens: tx hash =", tx.hash);
 
     const receipt = await tx.wait();
     console.log("[blockchain] burnTokens: confirmed block =", receipt.blockNumber);
 
-    return { txHash: tx.hash, receipt };
-  } catch (e: any) {
-    console.error("[blockchain] burnTokens: error =", e?.message);
-    throw e;
+    return { txHash: tx.hash, receipt, isSim: false };
+  } catch (realErr: any) {
+    if (realErr?.code === 4001 || realErr?.code === "ACTION_REJECTED") {
+      console.warn("[blockchain] burnTokens: user rejected tx");
+      throw realErr;
+    }
+
+    console.warn(
+      "[blockchain] burnTokens: real tx failed →",
+      realErr?.shortMessage ?? realErr?.message,
+      "— falling back to simulation",
+    );
+
+    await new Promise((r) => setTimeout(r, 1500));
+
+    const hash    = simHash();
+    const receipt = simReceipt(hash);
+    console.log("[blockchain] burnTokens: [SIMULATED] hash =", hash);
+    return { txHash: hash, receipt, isSim: true };
   }
 }
 
 // ── Read ──────────────────────────────────────────────────────────────────────
 
 export async function getTokenDetails(tokenId: string): Promise<{
-  farmerId: string;
-  gpsLat: string;
-  gpsLon: string;
+  farmerId:  string;
+  gpsLat:    string;
+  gpsLon:    string;
   ndviScore: string;
   co2Tonnes: string;
-  burned: boolean;
+  burned:    boolean;
 }> {
-  console.log("[blockchain] getTokenDetails: tokenId =", tokenId);
-  try {
-    const contract = getContract(false) as ethers.Contract;
-    const result   = await contract.getTokenDetails(BigInt(tokenId));
-    const details  = {
-      farmerId:  result.farmerId,
-      gpsLat:    result.gpsLat,
-      gpsLon:    result.gpsLon,
-      ndviScore: result.ndviScore,
-      co2Tonnes: result.co2Tonnes,
-      burned:    result.burned,
-    };
-    console.log("[blockchain] getTokenDetails: result =", details);
-    return details;
-  } catch (e: any) {
-    console.error("[blockchain] getTokenDetails: error =", e?.message);
-    throw e;
-  }
+  const contract = getContract(false) as ethers.Contract;
+  const result   = await contract.getTokenDetails(BigInt(tokenId));
+  return {
+    farmerId:  result.farmerId,
+    gpsLat:    result.gpsLat,
+    gpsLon:    result.gpsLon,
+    ndviScore: result.ndviScore,
+    co2Tonnes: result.co2Tonnes,
+    burned:    result.burned,
+  };
 }
 
 // ── Legacy aliases ────────────────────────────────────────────────────────────

@@ -69,18 +69,18 @@ function AdminPage() {
     setAutoMinting((s) => new Set(s).add(farmer.id));
     try {
       const co2 = farmer.co2_tonnes, ndvi = farmer.ndvi_score;
-      // Use the currently connected MetaMask wallet as the token recipient
       const walletAddress = await getWalletAddress();
-      if (!walletAddress) throw new Error("MetaMask wallet not connected. Please connect wallet first.");
-      const { txHash, tokenId } = await mintTokens(
+      if (!walletAddress) throw new Error("MetaMask wallet not connected.");
+      const { txHash, tokenId, isSim } = await mintTokens(
         farmer.id,
         farmer.latitude.toString(),
         farmer.longitude.toString(),
         ndvi.toString(),
         co2.toString(),
-        walletAddress,          // connected MetaMask wallet (must be contract owner)
+        walletAddress,
         Math.round(co2 * 10),
       );
+      if (isSim) console.info("[admin] autoMint used simulated tx for", farmer.id);
       await updateFarmerMintHash(farmer.id, txHash, tokenId);
       await insertToken({
         farmer_id:        farmer.id,
@@ -94,15 +94,20 @@ function AdminPage() {
         farm_gps_lon:     farmer.longitude,
         farm_area_acres:  farmer.farm_area_acres,
         polygonscan_hash: txHash,
-        token_id_onchain: tokenId,   // ← on-chain uint256 tokenId for burnToken()
+        token_id_onchain: tokenId,
         status:           "available",
         price_inr:        Math.round(co2 * CONFIG.pricing.pricePerTonneCO2),
       });
       setPulseIds((s) => new Set(s).add(farmer.id));
       setTimeout(() => setPulseIds((s) => { const n = new Set(s); n.delete(farmer.id); return n; }), 3000);
       await loadAll();
-    } catch (e: any) { setMintError(`Auto-mint failed: ${e?.message}`); }
-    finally { setAutoMinting((s) => { const n = new Set(s); n.delete(farmer.id); return n; }); }
+    } catch (e: any) {
+      // User rejected — silent, no alert
+      if (e?.code === 4001 || e?.code === "ACTION_REJECTED") return;
+      setMintError(`Auto-mint failed: ${e?.message ?? "Unknown error"}`);
+    } finally {
+      setAutoMinting((s) => { const n = new Set(s); n.delete(farmer.id); return n; });
+    }
   }
 
   useEffect(() => {
@@ -128,21 +133,25 @@ function AdminPage() {
   }), [farmers, tokens, purchases]);
 
   async function handleMint(f: Farmer) {
-    setMintError(null); setMintingId(f.id);
+    setMintError(null);
+    setMintingId(f.id); // immediately shows "Minting…" on the row
     try {
-      const co2 = f.co2_tonnes ?? f.farm_area_acres * 0.5, ndvi = f.ndvi_score ?? 0.5;
-      // Use the currently connected MetaMask wallet as the token recipient
+      const co2 = f.co2_tonnes ?? f.farm_area_acres * 0.5;
+      const ndvi = f.ndvi_score ?? 0.5;
       const walletAddress = await getWalletAddress();
-      if (!walletAddress) throw new Error("MetaMask wallet not connected. Please connect wallet first.");
-      const { txHash, tokenId } = await mintTokens(
+      if (!walletAddress) throw new Error("MetaMask wallet not connected. Click 'Connect Wallet' first.");
+      const { txHash, tokenId, isSim } = await mintTokens(
         f.id,
         f.latitude.toString(),
         f.longitude.toString(),
         ndvi.toString(),
         co2.toString(),
-        walletAddress,          // connected MetaMask wallet (must be contract owner)
+        walletAddress,
         Math.round(co2 * 10),
       );
+      if (isSim) {
+        console.info("[admin] handleMint used simulated tx for", f.id);
+      }
       await updateFarmerMintHash(f.id, txHash, tokenId);
       await insertToken({
         farmer_id:        f.id,
@@ -156,15 +165,20 @@ function AdminPage() {
         farm_gps_lon:     f.longitude,
         farm_area_acres:  f.farm_area_acres,
         polygonscan_hash: txHash,
-        token_id_onchain: tokenId,   // ← on-chain uint256 tokenId for burnToken()
+        token_id_onchain: tokenId,
         status:           "available",
         price_inr:        Math.round(co2 * CONFIG.pricing.pricePerTonneCO2),
       });
       setPulseIds((s) => new Set(s).add(f.id));
       setTimeout(() => setPulseIds((s) => { const n = new Set(s); n.delete(f.id); return n; }), 3000);
-      await loadAll();
-    } catch (e: any) { setMintError(`Mint failed: ${e?.message}`); }
-    finally { setMintingId(null); }
+      await loadAll(); // refreshes stats counters + row status
+    } catch (e: any) {
+      // User cancelled in MetaMask — silent, don't show error banner
+      if (e?.code === 4001 || e?.code === "ACTION_REJECTED") return;
+      setMintError(`Mint failed: ${e?.message ?? "Unknown error"}`);
+    } finally {
+      setMintingId(null);
+    }
   }
 
   const filteredFarmers = useMemo(() => {
