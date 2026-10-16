@@ -25,9 +25,14 @@ def health():
 # ── Main processing endpoint ──────────────────────────────────────────────────
 @app.route("/process", methods=["POST"])
 def process_farmer():
-    farmer = request.json
+    # force=True — parses JSON regardless of Content-Type header
+    # silent=True — returns None instead of raising 400 on parse failure
+    farmer = request.get_json(force=True, silent=True)
     if not farmer or "id" not in farmer:
-        return jsonify({"error": "Missing farmer payload"}), 400
+        return jsonify({
+            "error": "Missing farmer payload",
+            "received": str(request.data[:200])  # helps debug what actually arrived
+        }), 400
 
     missing = [k for k in ("COPERNICUS_USER", "COPERNICUS_PASS", "SUPABASE_KEY")
                if not os.environ.get(k)]
