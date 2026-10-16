@@ -130,19 +130,11 @@ export async function getWalletAddress(): Promise<string | null> {
   try {
     if (!window.ethereum) return null;
     const provider = new ethers.BrowserProvider(window.ethereum);
-    // eth_requestAccounts triggers the MetaMask popup if not connected,
-    // and returns the already-connected account silently if it is connected.
-    const accounts = await provider.send("eth_requestAccounts", []);
+    // eth_accounts — NO popup, just returns already-connected accounts
+    const accounts = await provider.send("eth_accounts", []);
     return accounts[0] ?? null;
   } catch {
-    // If user dismisses the popup, fall back to eth_accounts (no popup)
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.send("eth_accounts", []);
-      return accounts[0] ?? null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
@@ -166,61 +158,33 @@ export async function mintTokens(
 ): Promise<MintResult> {
   console.log("[blockchain] mintTokens: farmer =", farmerId);
 
-  // ── Real on-chain attempt ─────────────────────────────────────────────────
-  try {
-    const contract = await getContract(true) as ethers.Contract;
+  // ── Simulated path (owner wallet unavailable) ─────────────────────────────
+  // Real contract owner is 0x573874dA…, current wallet is different.
+  // Skip on-chain attempt to avoid MetaMask popup spam. Go straight to sim.
+  await new Promise((r) => setTimeout(r, 1500));
+  const hash    = simHash();
+  const receipt = simReceipt(hash);
+  const tokenId = String(Math.floor(Math.random() * 9000) + 1000);
+  console.log("[blockchain] mintTokens: [SIMULATED] hash =", hash, "tokenId =", tokenId);
+  return { txHash: hash, tokenId, receipt, isSim: true };
 
-    const tx = await contract.mintToken(
-      farmerAddress,
-      farmerId,
-      gpsLat,
-      gpsLon,
-      ndviScore,
-      co2Tonnes,
-      BigInt(amount),
-      {
-        gasLimit:             BigInt(500_000),
-        maxFeePerGas:         BigInt("50000000000"),
-        maxPriorityFeePerGas: BigInt("30000000000"),
-      },
-    );
-    console.log("[blockchain] mintTokens: tx hash =", tx.hash);
-
-    const receipt = await tx.wait();
-    console.log("[blockchain] mintTokens: confirmed block =", receipt.blockNumber);
-
-    let tokenId = "0";
-    try {
-      const counter = await contract.tokenCounter();
-      tokenId = (counter - 1n).toString();
-    } catch {
-      tokenId = receipt.blockNumber?.toString() ?? "0";
-    }
-
-    return { txHash: tx.hash, tokenId, receipt, isSim: false };
-  } catch (realErr: any) {
-    // User rejected — don't fall back, rethrow so UI can show "cancelled"
-    if (realErr?.code === 4001 || realErr?.code === "ACTION_REJECTED") {
-      console.warn("[blockchain] mintTokens: user rejected tx");
-      throw realErr;
-    }
-
-    // All other failures (onlyOwner, low POL, network) → simulated fallback
-    console.warn(
-      "[blockchain] mintTokens: real tx failed →",
-      realErr?.shortMessage ?? realErr?.message,
-      "— falling back to simulation",
-    );
-
-    await new Promise((r) => setTimeout(r, 1500)); // simulate network delay
-
-    const hash    = simHash();
-    const receipt = simReceipt(hash);
-    const tokenId = String(Math.floor(Math.random() * 9000) + 1000);
-
-    console.log("[blockchain] mintTokens: [SIMULATED] hash =", hash, "tokenId =", tokenId);
-    return { txHash: hash, tokenId, receipt, isSim: true };
-  }
+  // ── Real on-chain path (uncomment when contract is redeployed with current wallet) ──
+  // try {
+  //   const contract = await getContract(true) as ethers.Contract;
+  //   const tx = await contract.mintToken(farmerAddress, farmerId, gpsLat, gpsLon,
+  //     ndviScore, co2Tonnes, BigInt(amount),
+  //     { gasLimit: BigInt(500_000), maxFeePerGas: BigInt("50000000000"), maxPriorityFeePerGas: BigInt("30000000000") });
+  //   const receipt = await tx.wait();
+  //   let tokenId = "0";
+  //   try { const c = await contract.tokenCounter(); tokenId = (c - 1n).toString(); } catch {}
+  //   return { txHash: tx.hash, tokenId, receipt, isSim: false };
+  // } catch (e: any) {
+  //   if (e?.code === 4001 || e?.code === "ACTION_REJECTED") throw e;
+  //   await new Promise((r) => setTimeout(r, 1500));
+  //   const hash = simHash(); const receipt = simReceipt(hash);
+  //   const tokenId = String(Math.floor(Math.random() * 9000) + 1000);
+  //   return { txHash: hash, tokenId, receipt, isSim: true };
+  // }
 }
 
 // ── Burn ──────────────────────────────────────────────────────────────────────
@@ -234,40 +198,12 @@ export type BurnResult = {
 export async function burnTokens(tokenId: string): Promise<BurnResult> {
   console.log("[blockchain] burnTokens: tokenId =", tokenId);
 
-  // ── Real on-chain attempt ─────────────────────────────────────────────────
-  try {
-    const contract = await getContract(true) as ethers.Contract;
-
-    const tx = await contract.burnToken(BigInt(tokenId), {
-      gasLimit:             BigInt(200_000),
-      maxFeePerGas:         BigInt("50000000000"),
-      maxPriorityFeePerGas: BigInt("30000000000"),
-    });
-    console.log("[blockchain] burnTokens: tx hash =", tx.hash);
-
-    const receipt = await tx.wait();
-    console.log("[blockchain] burnTokens: confirmed block =", receipt.blockNumber);
-
-    return { txHash: tx.hash, receipt, isSim: false };
-  } catch (realErr: any) {
-    if (realErr?.code === 4001 || realErr?.code === "ACTION_REJECTED") {
-      console.warn("[blockchain] burnTokens: user rejected tx");
-      throw realErr;
-    }
-
-    console.warn(
-      "[blockchain] burnTokens: real tx failed →",
-      realErr?.shortMessage ?? realErr?.message,
-      "— falling back to simulation",
-    );
-
-    await new Promise((r) => setTimeout(r, 1500));
-
-    const hash    = simHash();
-    const receipt = simReceipt(hash);
-    console.log("[blockchain] burnTokens: [SIMULATED] hash =", hash);
-    return { txHash: hash, receipt, isSim: true };
-  }
+  // Simulated path — mirrors mintTokens above
+  await new Promise((r) => setTimeout(r, 1500));
+  const hash    = simHash();
+  const receipt = simReceipt(hash);
+  console.log("[blockchain] burnTokens: [SIMULATED] hash =", hash);
+  return { txHash: hash, receipt, isSim: true };
 }
 
 // ── Read ──────────────────────────────────────────────────────────────────────
