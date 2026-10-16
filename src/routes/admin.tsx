@@ -3,9 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ExternalLink, Search, Download, Leaf, Users, Clock,
   ShieldCheck, Sprout, Zap, Loader2, CreditCard,
-  CheckCircle2, BarChart3, RefreshCw, Wallet,
+  CheckCircle2, BarChart3, RefreshCw, Wallet, Trash2,
 } from "lucide-react";
-import { getAllFarmers, updateFarmerMintHash, insertToken, subscribeToFarmers } from "@/lib/db";
+import { getAllFarmers, updateFarmerMintHash, insertToken, subscribeToFarmers, deleteFarmer } from "@/lib/db";
 import { supabase } from "@/integrations/supabase/client";
 import { mintTokens, getWalletAddress } from "@/lib/blockchain";
 import { CONFIG } from "@/lib/config";
@@ -49,6 +49,7 @@ function AdminPage() {
   const [mintError, setMintError]   = useState<string | null>(null);
   const [pulseIds, setPulseIds]     = useState<Set<string>>(new Set());
   const [autoMinting, setAutoMinting] = useState<Set<string>>(new Set());
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function loadAll() {
     try {
@@ -184,6 +185,19 @@ function AdminPage() {
     }
   }
 
+  async function handleDelete(f: Farmer) {
+    if (!window.confirm(`Delete "${f.name}" from ${f.village}? This cannot be undone.`)) return;
+    setDeletingId(f.id);
+    try {
+      await deleteFarmer(f.id);
+      await loadAll();
+    } catch (e: any) {
+      setMintError(`Delete failed: ${e?.message ?? "Unknown error"}`);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const filteredFarmers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return q ? farmers.filter(f => f.name.toLowerCase().includes(q) || f.village.toLowerCase().includes(q)) : farmers;
@@ -245,10 +259,10 @@ function AdminPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-xs uppercase tracking-wider text-foreground/60">
-                <tr>{["Name","Mobile","Village","Area","NDVI","CO₂","Earnings","Status","Mint / Polygonscan"].map(h => <th key={h} className="px-3 py-3 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr>
+                <tr>{["Name","Mobile","Village","Area","NDVI","CO₂","Earnings","Status","Mint / Polygonscan","Delete"].map(h => <th key={h} className="px-3 py-3 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr>
               </thead>
               <tbody>
-                {loading && <tr><td colSpan={10} className="text-center py-10 text-foreground/50"><Loader2 className="w-5 h-5 animate-spin inline mr-2"/>Loading...</td></tr>}
+                {loading && <tr><td colSpan={11} className="text-center py-10 text-foreground/50"><Loader2 className="w-5 h-5 animate-spin inline mr-2"/>Loading...</td></tr>}
                 {!loading && filteredFarmers.map(f => (
                   <tr key={f.id} className={`border-t border-border hover:bg-muted/20 ${pulseIds.has(f.id) ? "kc-row-pulse" : ""}`}>
                     <td className="px-3 py-2.5 font-medium">{f.name}</td>
@@ -269,6 +283,19 @@ function AdminPage() {
                       ) : f.polygonscan_hash ? (
                         <a href={`${CONFIG.blockchain.explorerUrl}/tx/${f.polygonscan_hash}`} target="_blank" rel="noreferrer" className="text-green-600 text-xs font-semibold hover:underline inline-flex items-center gap-1 whitespace-nowrap">✅ Minted <ExternalLink className="w-3 h-3"/></a>
                       ) : <span className="text-foreground/30 text-xs">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <button
+                        type="button"
+                        disabled={deletingId === f.id}
+                        onClick={() => handleDelete(f)}
+                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-50 hover:text-red-700 transition disabled:opacity-40"
+                        title="Delete farmer"
+                      >
+                        {deletingId === f.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin"/>
+                          : <Trash2 className="w-3.5 h-3.5"/>}
+                      </button>
                     </td>
                   </tr>
                 ))}

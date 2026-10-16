@@ -93,6 +93,14 @@ export async function updateFarmerNDVI(
   return farmer;
 }
 
+export async function deleteFarmer(farmerId: string) {
+  const { error } = await supabase
+    .from("farmers")
+    .delete()
+    .eq("id", farmerId);
+  if (error) throw error;
+}
+
 export async function updateFarmerTokenHash(farmerId: string, polygonscanHash: string) {
   const { data, error } = await supabase
     .from("farmers")
