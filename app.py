@@ -62,22 +62,31 @@ def process_farmer():
     if missing:
         return jsonify({"error": f"Missing env vars: {', '.join(missing)}"}), 500
 
-    # ── 1. Copernicus CDSE auth ───────────────────────────────────────────────
-    try:
-        token_resp = requests.post(
-            "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
-            data={
-                "client_id":  "cdse-public",
-                "username":   COPERNICUS_USER,
-                "password":   COPERNICUS_PASS,
-                "grant_type": "password",
-            },
-            timeout=15,
-        )
-        token_resp.raise_for_status()
-        token = token_resp.json()["access_token"]
-    except Exception as e:
-        return jsonify({"error": f"Copernicus auth failed: {str(e)}"}), 502
+    # ── 1. Copernicus token — use n8n's pre-fetched token if available ────────
+    # n8n Node 03 already fetched the token and sends it in body + header.
+    # Only do a fresh login if neither is present (direct curl / fallback calls).
+    token = (
+        data.get("access_token")                       # body: {"access_token": "..."}
+        or request.headers.get("X-Copernicus-Token")   # header: X-Copernicus-Token
+    )
+
+    if not token:
+        try:
+            token_resp = requests.post(
+                "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
+                data={                          # MUST be form-encoded (data=), NOT json=
+                    "client_id":  "cdse-public",
+                    "username":   COPERNICUS_USER,
+                    "password":   COPERNICUS_PASS,
+                    "grant_type": "password",
+                },
+                timeout=15,
+            )
+            if token_resp.status_code != 200:
+                return jsonify({"error": f"Copernicus auth failed: {token_resp.text}"}), 502
+            token = token_resp.json()["access_token"]
+        except Exception as e:
+            return jsonify({"error": f"Copernicus auth failed: {str(e)}"}), 502
 
     # ── 2. Search Sentinel-2 catalogue for latest scene at farm GPS ───────────
     search_url = (
