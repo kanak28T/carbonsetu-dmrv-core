@@ -9,6 +9,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { Navbar } from "@/components/Navbar";
+import { LangProvider } from "@/lib/i18n";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -114,12 +115,14 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen flex flex-col bg-white">
-        {!isCertificate && <Navbar />}
-        <main className="flex-1">
-          <Outlet />
-        </main>
-      </div>
+      <LangProvider>
+        <div className="min-h-screen flex flex-col bg-white">
+          {!isCertificate && <Navbar />}
+          <main className="flex-1">
+            <Outlet />
+          </main>
+        </div>
+      </LangProvider>
     </QueryClientProvider>
   );
 }
