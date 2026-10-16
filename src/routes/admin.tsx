@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { getAllFarmers, updateFarmerMintHash, insertToken, subscribeToFarmers } from "@/lib/db";
 import { supabase } from "@/integrations/supabase/client";
-import { mintTokens } from "@/lib/blockchain";
+import { mintTokens, getWalletAddress } from "@/lib/blockchain";
 import { CONFIG } from "@/lib/config";
 import { requireAdmin } from "@/lib/auth-guard";
 
@@ -69,13 +69,16 @@ function AdminPage() {
     setAutoMinting((s) => new Set(s).add(farmer.id));
     try {
       const co2 = farmer.co2_tonnes, ndvi = farmer.ndvi_score;
+      // Use the currently connected MetaMask wallet as the token recipient
+      const walletAddress = await getWalletAddress();
+      if (!walletAddress) throw new Error("MetaMask wallet not connected. Please connect wallet first.");
       const { txHash, tokenId } = await mintTokens(
         farmer.id,
         farmer.latitude.toString(),
         farmer.longitude.toString(),
         ndvi.toString(),
         co2.toString(),
-        "0x573874dAbAe68fbE01b0679585dEd85D3C36Bf2A",
+        walletAddress,          // connected MetaMask wallet (must be contract owner)
         Math.round(co2 * 10),
       );
       await updateFarmerMintHash(farmer.id, txHash, tokenId);
@@ -128,13 +131,16 @@ function AdminPage() {
     setMintError(null); setMintingId(f.id);
     try {
       const co2 = f.co2_tonnes ?? f.farm_area_acres * 0.5, ndvi = f.ndvi_score ?? 0.5;
+      // Use the currently connected MetaMask wallet as the token recipient
+      const walletAddress = await getWalletAddress();
+      if (!walletAddress) throw new Error("MetaMask wallet not connected. Please connect wallet first.");
       const { txHash, tokenId } = await mintTokens(
         f.id,
         f.latitude.toString(),
         f.longitude.toString(),
         ndvi.toString(),
         co2.toString(),
-        "0x573874dAbAe68fbE01b0679585dEd85D3C36Bf2A",
+        walletAddress,          // connected MetaMask wallet (must be contract owner)
         Math.round(co2 * 10),
       );
       await updateFarmerMintHash(f.id, txHash, tokenId);

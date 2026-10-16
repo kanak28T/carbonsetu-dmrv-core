@@ -139,8 +139,9 @@ export async function mintTokens(
       co2Tonnes,
       BigInt(amount),
       {
-        maxFeePerGas:         BigInt("50000000000"), // 50 gwei
-        maxPriorityFeePerGas: BigInt("30000000000"), // 30 gwei — above Amoy minimum 25 gwei
+        gasLimit:             BigInt(500000),         // explicit limit — bypasses estimateGas revert
+        maxFeePerGas:         BigInt("50000000000"),  // 50 gwei
+        maxPriorityFeePerGas: BigInt("30000000000"),  // 30 gwei — above Amoy minimum 25 gwei
       }
     );
     console.log("[blockchain] mintTokens: hash =", tx.hash);
@@ -176,7 +177,11 @@ export async function burnTokens(
     const contract = await getContract(true) as ethers.Contract;
 
     console.log("[blockchain] burnTokens: sending tx...");
-    const tx = await contract.burnToken(BigInt(tokenId));
+    const tx = await contract.burnToken(BigInt(tokenId), {
+      gasLimit:             BigInt(200000),
+      maxFeePerGas:         BigInt("50000000000"),
+      maxPriorityFeePerGas: BigInt("30000000000"),
+    });
     console.log("[blockchain] burnTokens: hash =", tx.hash);
 
     const receipt = await tx.wait();
