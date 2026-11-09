@@ -41,7 +41,7 @@ function Landing() {
               हर शेतकऱ्याला योग्य भाव, पारदर्शक नोंदणी
             </p>
             <p className="mt-2 text-white/75 text-base max-w-lg">
-              Register your farm in minutes. Buyers purchase verified credits — 90% goes to you.
+              Register your farm in minutes. Buyers purchase verified credits — 80% goes to you.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <RegisterLink className="kc-btn-primary inline-flex items-center gap-2 shadow-lg !bg-primary hover:!bg-[#154d1a]" />
@@ -61,7 +61,7 @@ function Landing() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 grid grid-cols-2 md:grid-cols-4 gap-6">
           {[
             { icon: ShieldCheck, label: "Verified farms", sub: "GPS + records" },
-            { icon: Banknote, label: "90% to farmer", sub: "Direct payout" },
+            { icon: Banknote, label: "80% to farmer", sub: "Direct payout" },
             { icon: MapPin, label: "Nagpur only", sub: "Local talukas" },
             { icon: BadgeCheck, label: "Trusted buyers", sub: "Clear certificates" },
           ].map(({ icon: Icon, label, sub }) => (
@@ -169,7 +169,7 @@ function Landing() {
                 {[
                   { n: "1", t: "Register", d: "Name, mobile, village, taluka, gat no., farm size, GPS." },
                   { n: "2", t: "We verify", d: "Your farm is checked against satellite data." },
-                  { n: "3", t: "You get paid", d: "When a company buys your credit, 90% reaches you." },
+                  { n: "3", t: "You get paid", d: "When a company buys your credit, 80% reaches you." },
                 ].map((s) => (
                   <li key={s.n} className="flex gap-4">
                     <span className="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center font-bold shrink-0">

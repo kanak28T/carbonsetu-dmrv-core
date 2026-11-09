@@ -24,7 +24,7 @@ export const translations = {
   reg_heroTitle: { en: "Register your farm",  hi: "अपनी खेती नोंदणी करें", mr: "तुमच्या शेताची नोंदणी करा" },
   reg_bullet1:   { en: "Takes only 2–3 minutes",       hi: "केवल 2–3 मिनट लगते हैं",      mr: "फक्त २–३ मिनिटे लागतात"    },
   reg_bullet2:   { en: "Only Nagpur district farmers", hi: "केवल नागपुर जिले के किसान",    mr: "नागपूर जिल्ह्यातील शेतकरीच" },
-  reg_bullet3:   { en: "90% directly to your account", hi: "90% सीधे आपके खाते में",      mr: "90% रक्कम थेट तुमच्या खात्यात" },
+  reg_bullet3:   { en: "80% directly to your account", hi: "80% सीधे आपके खाते में",      mr: "80% रक्कम थेट तुमच्या खात्यात" },
   reg_title:     { en: "Farm details",         hi: "खेत की जानकारी",  mr: "शेताची माहिती"   },
   reg_subtitle:  { en: "Fill all details correctly", hi: "सभी जानकारी सही भरें", mr: "सर्व माहिती खरी आणि पूर्ण भरा" },
   reg_name:      { en: "Full name",            hi: "पूरा नाम",        mr: "पूर्ण नाव"       },

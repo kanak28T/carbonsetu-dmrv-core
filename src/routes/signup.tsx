@@ -180,7 +180,7 @@ function SignUpPage() {
           <ul className="space-y-3">
             {[
               "Free farmer registration",
-              "90% payout directly to farmer",
+              "80% payout directly to farmer",
               "Satellite-verified carbon credits",
             ].map((item) => (
               <li key={item} className="flex items-center gap-3 text-white/85">

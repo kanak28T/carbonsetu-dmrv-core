@@ -86,7 +86,7 @@ function RegistryPage() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 h-full flex flex-col justify-center">
           <h1 className="text-3xl md:text-4xl font-bold text-white">Buy verified farm credits</h1>
           <p className="mt-2 text-white/85 max-w-xl">
-            Real farms from Nagpur district. Official certificate after purchase. 90% supports the
+            Real farms from Nagpur district. Official certificate after purchase. 80% supports the
             farmer.
           </p>
         </div>

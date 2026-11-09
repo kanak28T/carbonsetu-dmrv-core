@@ -73,7 +73,7 @@ function AdminPage() {
       const walletAddress =
         (await getWalletAddress()) ??
         "0x0000000000000000000000000000000000000001";
-      const { txHash, tokenId, isSim } = await mintTokens(
+      const { txHash, tokenId, landHash, isSim } = await mintTokens(
         farmer.id,
         farmer.latitude.toString(),
         farmer.longitude.toString(),
@@ -81,8 +81,11 @@ function AdminPage() {
         co2.toString(),
         walletAddress,
         Math.round(co2 * 10),
+        farmer.taluka,
+        farmer.village,
+        farmer.gat_number,
       );
-      if (isSim) console.info("[admin] autoMint used simulated tx for", farmer.id);
+      if (isSim) console.info("[admin] autoMint used simulated tx for", farmer.id, "landHash:", landHash);
       await updateFarmerMintHash(farmer.id, txHash, tokenId);
       await insertToken({
         farmer_id:        farmer.id,
@@ -144,7 +147,7 @@ function AdminPage() {
       const walletAddress =
         (await getWalletAddress()) ??
         "0x0000000000000000000000000000000000000001"; // fallback custody addr
-      const { txHash, tokenId, isSim } = await mintTokens(
+      const { txHash, tokenId, landHash, isSim } = await mintTokens(
         f.id,
         f.latitude.toString(),
         f.longitude.toString(),
@@ -152,9 +155,12 @@ function AdminPage() {
         co2.toString(),
         walletAddress,
         Math.round(co2 * 10),
+        f.taluka,
+        f.village,
+        f.gat_number,
       );
       if (isSim) {
-        console.info("[admin] handleMint used simulated tx for", f.id);
+        console.info("[admin] handleMint used simulated tx for", f.id, "landHash:", landHash);
       }
       await updateFarmerMintHash(f.id, txHash, tokenId);
       await insertToken({

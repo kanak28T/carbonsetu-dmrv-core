@@ -35,7 +35,7 @@ function AboutPage() {
             {
               i: Users,
               t: "Farmers first",
-              d: "90% of every sale is reserved for the farmer.",
+              d: "80% of every sale is reserved for the farmer.",
               img: IMAGES.farmerPortrait,
             },
             {

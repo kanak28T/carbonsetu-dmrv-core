@@ -11,12 +11,14 @@ pragma solidity ^0.8.20;
  * • Each token represents a unique farm parcel (1 parcel = 1 tokenId).
  * • All geo/NDVI/CO₂ metadata is stored on-chain inside a ParcelRecord struct.
  * • Minting links a Supabase farmer UUID to a permanent on-chain record.
+ * • landHash = SHA-256(District ∥ Taluka ∥ Village ∥ GatNo) prevents duplicate
+ *   land registration — stored on-chain and checked at mint time.
  * • Burning permanently retires the credit (sets burned = true) — irreversible.
  * • 80 / 20 payout split is enforced off-chain (Supabase + Decentro UPI);
  *   this contract handles only the token lifecycle.
  *
  * Deployed: Polygon Amoy Testnet (chainId 80002)
- * Address:  0x049a443e7453F16C74229BF188B3A939e2753204
+ * Address:  REDEPLOY — new address after adding landHash field
  *
  * ABI surface matches blockchain.ts in src/lib/blockchain.ts exactly.
  */
@@ -36,6 +38,7 @@ contract KisanCredit {
         string gpsLon;     // Farm GPS longitude (6 decimal places, WGS-84)
         string ndviScore;  // NDVI score from Sentinel-2 Band 8 / Band 4 ratio
         string co2Tonnes;  // Annual CO₂ sequestration in tonnes (NDVI × ha × 10)
+        bytes32 landHash;  // SHA-256(District ∥ Taluka ∥ Village ∥ GatNo) — anti-duplicate fingerprint
         bool   burned;     // true once burnToken() is called — permanent retirement
     }
 
@@ -58,6 +61,11 @@ contract KisanCredit {
     ///         Units = round(co2Tonnes * 10) for sub-tonne granularity.
     mapping(uint256 => uint256) private _amounts;
 
+    /// @notice Mapping from landHash → tokenId+1 (0 = not registered).
+    ///         Prevents the same physical parcel from being registered twice.
+    ///         Value is stored as tokenId+1 so that tokenId 0 can be distinguished from "empty".
+    mapping(bytes32 => uint256) private _landHashToTokenId;
+
     // ── Events ────────────────────────────────────────────────────────────────
 
     /**
@@ -68,6 +76,7 @@ contract KisanCredit {
      * @param ndviScore NDVI score (string).
      * @param gpsLat    Farm GPS latitude (string).
      * @param gpsLon    Farm GPS longitude (string).
+     * @param landHash  SHA-256 fingerprint of the land record (bytes32).
      */
     event TokenMinted(
         uint256 indexed tokenId,
@@ -75,7 +84,8 @@ contract KisanCredit {
         string  co2Tonnes,
         string  ndviScore,
         string  gpsLat,
-        string  gpsLon
+        string  gpsLon,
+        bytes32 landHash
     );
 
     /**
@@ -117,53 +127,60 @@ contract KisanCredit {
     // ── Core Functions ────────────────────────────────────────────────────────
 
     /**
+     * @dev Input struct for mintToken — groups all parcel fields to avoid
+     *      "Stack too deep" with 8 parameters in the legacy Solidity codegen.
+     */
+    struct MintParams {
+        address to;          // Recipient wallet address
+        string  farmerId;    // Supabase UUID
+        string  gpsLat;      // Latitude string
+        string  gpsLon;      // Longitude string
+        string  ndviScore;   // NDVI value string
+        string  co2Tonnes;   // CO₂ tonnes string
+        uint256 amount;      // Token units (co2Tonnes * 10)
+        bytes32 landHash;    // SHA-256(NAGPUR|Taluka|Village|GatNo)
+    }
+
+    /**
      * @notice Mint a new carbon credit token for a verified farm parcel.
      * @dev    Only the contract owner (admin wallet) can mint.
-     *         Stores the full ParcelRecord on-chain and emits TokenMinted.
+     *         Rejects if the same landHash has already been registered —
+     *         prevents duplicate credits for the same physical parcel.
+     *         Uses MintParams struct to avoid stack-too-deep with 8 fields.
      *
-     * @param to         Recipient address (farmer wallet or admin custody address).
-     * @param farmerId   Supabase UUID string linking to the off-chain farmers table.
-     * @param gpsLat     Farm GPS latitude as a string (e.g. "21.145623").
-     * @param gpsLon     Farm GPS longitude as a string (e.g. "79.082341").
-     * @param ndviScore  NDVI value as a string (e.g. "0.5789").
-     * @param co2Tonnes  CO₂ sequestration as a string (e.g. "5.84").
-     * @param amount     Token units to mint — typically round(co2Tonnes * 10).
+     * @param p  MintParams struct containing all mint fields.
      */
-    function mintToken(
-        address to,
-        string  calldata farmerId,
-        string  calldata gpsLat,
-        string  calldata gpsLon,
-        string  calldata ndviScore,
-        string  calldata co2Tonnes,
-        uint256 amount
-    )
+    function mintToken(MintParams calldata p)
         public
         onlyOwner
     {
-        require(to != address(0),   "KisanCredit: mint to zero address");
-        require(amount > 0,         "KisanCredit: amount must be > 0");
-        require(bytes(farmerId).length > 0, "KisanCredit: farmerId required");
+        require(p.to != address(0),   "KisanCredit: mint to zero address");
+        require(p.amount > 0,         "KisanCredit: amount must be > 0");
+        require(bytes(p.farmerId).length > 0, "KisanCredit: farmerId required");
+        require(p.landHash != bytes32(0), "KisanCredit: landHash required");
+        require(
+            _landHashToTokenId[p.landHash] == 0,
+            "KisanCredit: land parcel already registered"
+        );
 
         uint256 tokenId = tokenCounter;
 
         _records[tokenId] = ParcelRecord({
-            farmerId:  farmerId,
-            gpsLat:    gpsLat,
-            gpsLon:    gpsLon,
-            ndviScore: ndviScore,
-            co2Tonnes: co2Tonnes,
+            farmerId:  p.farmerId,
+            gpsLat:    p.gpsLat,
+            gpsLon:    p.gpsLon,
+            ndviScore: p.ndviScore,
+            co2Tonnes: p.co2Tonnes,
+            landHash:  p.landHash,
             burned:    false
         });
 
-        _owners[tokenId]  = to;
-        _amounts[tokenId] = amount;
+        _owners[tokenId]  = p.to;
+        _amounts[tokenId] = p.amount;
+        _landHashToTokenId[p.landHash] = tokenId + 1;
 
         tokenCounter += 1;
 
-        // Fix: emit via internal helper that reads from storage so the 6 calldata
-        // string variables are no longer live on the stack during the emit call.
-        // This resolves the "Stack too deep" error in the legacy Solidity codegen.
         _emitMinted(tokenId);
     }
 
@@ -174,7 +191,7 @@ contract KisanCredit {
      */
     function _emitMinted(uint256 tokenId) private {
         ParcelRecord storage r = _records[tokenId];
-        emit TokenMinted(tokenId, r.farmerId, r.co2Tonnes, r.ndviScore, r.gpsLat, r.gpsLon);
+        emit TokenMinted(tokenId, r.farmerId, r.co2Tonnes, r.ndviScore, r.gpsLat, r.gpsLon, r.landHash);
     }
 
     /**
@@ -205,11 +222,11 @@ contract KisanCredit {
     /**
      * @notice Return the full ParcelRecord for a given tokenId.
      * @dev    Matches the ABI in blockchain.ts:
-     *         getTokenDetails(uint256) returns (tuple(string,string,string,string,string,bool))
+     *         getTokenDetails(uint256) returns (tuple(string,string,string,string,string,bytes32,bool))
      *
      * @param tokenId  Token to query.
      * @return record  The ParcelRecord struct (farmerId, gpsLat, gpsLon,
-     *                 ndviScore, co2Tonnes, burned).
+     *                 ndviScore, co2Tonnes, landHash, burned).
      */
     function getTokenDetails(uint256 tokenId)
         public
@@ -218,6 +235,26 @@ contract KisanCredit {
         returns (ParcelRecord memory record)
     {
         return _records[tokenId];
+    }
+
+    /**
+     * @notice Check whether a land parcel has already been registered.
+     * @dev    Used by the frontend to detect duplicate registration before
+     *         submitting the mint transaction.
+     *         landHash = SHA-256(District ∥ Taluka ∥ Village ∥ GatNo)
+     *
+     * @param landHash  The bytes32 SHA-256 fingerprint to check.
+     * @return registered  true if the parcel is already on-chain.
+     * @return existingTokenId  The tokenId it was registered under (0 if not registered).
+     */
+    function isLandRegistered(bytes32 landHash)
+        public
+        view
+        returns (bool registered, uint256 existingTokenId)
+    {
+        uint256 stored = _landHashToTokenId[landHash];
+        if (stored == 0) return (false, 0);
+        return (true, stored - 1);
     }
 
     /**
