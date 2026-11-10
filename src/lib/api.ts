@@ -1,33 +1,43 @@
 /**
- * All external API calls — n8n, Decentro, Polygonscan.
+ * All external API calls — Flask dMRV engine, Decentro, Polygonscan.
  * Components never call fetch/axios directly; they call these functions.
+ *
+ * n8n has been replaced with a direct call to the Flask dMRV engine.
+ * The frontend POSTs farmer data directly to the Flask /process endpoint.
  */
 import axios from "axios";
 import { CONFIG } from "./config";
 
-// ── n8n Webhook ───────────────────────────────────────────────────────────────
+// ── Flask dMRV Engine (replaces n8n) ─────────────────────────────────────────
 
 /**
  * Fires after farmer registration.
- * n8n picks this up and runs: land records → Copernicus NDVI → mint → updateFarmerNDVI()
+ * Calls Flask /process directly — no n8n intermediary needed.
+ * Flask calculates NDVI + CO₂ and writes back to Supabase.
  */
-export async function triggerN8NWebhook(farmerData: Record<string, unknown>) {
-  if (!CONFIG.n8n.webhookUrl) {
-    console.warn("[api] n8n webhook URL not set — skipping. Add VITE_N8N_WEBHOOK_URL to .env");
+export async function triggerDMRVPipeline(farmerData: Record<string, unknown>) {
+  const flaskUrl = CONFIG.flask?.processUrl;
+
+  if (!flaskUrl) {
+    console.warn("[api] Flask dMRV URL not set — skipping. Add VITE_FLASK_URL to .env");
     return null;
   }
+
   try {
-    const res = await axios.post(CONFIG.n8n.webhookUrl, farmerData, {
+    const res = await axios.post(`${flaskUrl}/process`, { farmer: farmerData }, {
       headers: { "Content-Type": "application/json" },
-      timeout: 15000,
+      timeout: 30000,
     });
-    console.log("[api] n8n webhook triggered:", res.status);
+    console.log("[api] Flask dMRV pipeline triggered:", res.status);
     return res.data;
   } catch (e: any) {
-    console.error("[api] n8n webhook error:", e?.message);
-    return null; // non-fatal — don't block farmer registration
+    console.error("[api] Flask dMRV error:", e?.message);
+    return null; // non-fatal — farmer registration already saved
   }
 }
+
+// ── Legacy alias (keeps register.tsx working without changes) ─────────────────
+export const triggerN8NWebhook = triggerDMRVPipeline;
 
 // ── Decentro Payment ──────────────────────────────────────────────────────────
 

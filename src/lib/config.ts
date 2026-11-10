@@ -42,4 +42,8 @@ export const CONFIG = {
     apiKey: (import.meta.env.VITE_NUGEN_API_KEY ?? "") as string,
     model:  "nugen-flash-1.5",
   },
+
+  flask: {
+    processUrl: (import.meta.env.VITE_FLASK_URL ?? "") as string,
+  },
 } as const;
