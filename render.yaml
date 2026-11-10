@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: carbonsetu-dmrv-engine
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: COPERNICUS_USER
+        sync: false
+      - key: COPERNICUS_PASS
+        sync: false
+      - key: SUPABASE_URL
+        value: https://olrpwaoklzuownmibfim.supabase.co
+      - key: SUPABASE_KEY
+        sync: false
+    healthCheckPath: /

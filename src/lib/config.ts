@@ -40,7 +40,7 @@ export const CONFIG = {
 
   nugen: {
     apiKey: (import.meta.env.VITE_NUGEN_API_KEY ?? "") as string,
-    model:  "nugen-flash-1.5",
+    model:  "Qwen/Qwen2.5-1.5B-Instruct",
   },
 
   flask: {

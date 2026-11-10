@@ -15,8 +15,8 @@
 
 import { CONFIG } from "./config";
 
-const NUGEN_BASE_URL = "https://api.nugen.in/inference";
-const NUGEN_MODEL    = "nugen-flash-1.5"; // Nugen's domain-aligned model
+const NUGEN_BASE_URL = "https://api.nugen.in/api/v3/inference/chat/completions";
+const NUGEN_MODEL    = "Qwen/Qwen2.5-1.5B-Instruct"; // inference-ready base model
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -147,7 +147,7 @@ export async function generateFarmAdvisory(
       report:          parsed.report          ?? generateFallbackAdvisory(input).report,
       ndviAssessment:  parsed.ndviAssessment  ?? generateFallbackAdvisory(input).ndviAssessment,
       recommendation:  parsed.recommendation  ?? generateFallbackAdvisory(input).recommendation,
-      confidenceScore: data?.choices?.[0]?.confidence ?? 0.90,
+      confidenceScore: (data?.confidence_score ?? 90) / 100,  // Nugen returns 0-100
       isFallback: false,
     };
 
