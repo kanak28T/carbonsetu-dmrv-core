@@ -2,13 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   Leaf, MapPin, Clock, CheckCircle2, Loader2,
-  ExternalLink, Sprout, AlertCircle, RefreshCw,
+  ExternalLink, Sprout, AlertCircle, RefreshCw, Bot,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { requireAuth } from "@/lib/auth-guard";
 import { CONFIG } from "@/lib/config";
 import { useLang } from "@/lib/i18n";
+import { generateFarmAdvisory, type NugenAdvisoryResult } from "@/lib/nugen";
 
 export const Route = createFileRoute("/dashboard")({
   beforeLoad: () => requireAuth(),
@@ -159,6 +160,30 @@ function FarmCard({ farmer: f }: { farmer: Farmer }) {
   const hasNDVI   = f.ndvi_score !== null && f.co2_tonnes !== null;
   const isMinted  = f.token_status === "minted";
   const isBurned  = f.token_status === "burned";
+  const [advisory, setAdvisory] = useState<NugenAdvisoryResult | null>(null);
+  const [advisoryLoading, setAdvisoryLoading] = useState(false);
+
+  async function loadAdvisory() {
+    if (!hasNDVI || !f.ndvi_score || !f.co2_tonnes) return;
+    setAdvisoryLoading(true);
+    try {
+      const earnings = Math.round(f.co2_tonnes * CONFIG.pricing.pricePerTonneCO2 * CONFIG.pricing.farmerPayoutPercent);
+      const result = await generateFarmAdvisory({
+        farmerName:        f.name,
+        village:           f.village,
+        taluka:            f.taluka,
+        farmAreaAcres:     f.farm_area_acres,
+        ndviScore:         f.ndvi_score,
+        co2Tonnes:         f.co2_tonnes,
+        estimatedEarnings: earnings,
+      });
+      setAdvisory(result);
+    } catch (e) {
+      console.warn("[dashboard] Advisory generation failed:", e);
+    } finally {
+      setAdvisoryLoading(false);
+    }
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
@@ -271,6 +296,54 @@ function FarmCard({ farmer: f }: { farmer: Farmer }) {
               <ExternalLink className="w-4 h-4" />
               {t("dash_polygonscan")}
             </a>
+          </div>
+        )}
+
+        {/* Nugen AI Advisory */}
+        {hasNDVI && (
+          <div className="mt-4 pt-4 border-t border-border">
+            {!advisory && !advisoryLoading && (
+              <button
+                type="button"
+                onClick={loadAdvisory}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-4 py-2 rounded-lg transition"
+              >
+                <Bot className="w-4 h-4" />
+                Get AI Carbon Advisory (Nugen)
+              </button>
+            )}
+            {advisoryLoading && (
+              <div className="flex items-center gap-2 text-sm text-purple-600">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Generating domain-aligned advisory…
+              </div>
+            )}
+            {advisory && (
+              <div className="rounded-xl bg-purple-50 border border-purple-200 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Bot className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span className="text-xs font-bold text-purple-700 uppercase tracking-wide">
+                    Nugen AI Advisory {advisory.isFallback ? "" : "· Domain-Aligned"}
+                  </span>
+                  {!advisory.isFallback && (
+                    <span className="ml-auto text-xs text-purple-500 font-semibold">
+                      {(advisory.confidenceScore * 100).toFixed(0)}% confidence
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-purple-900">{advisory.report}</p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="bg-white rounded-lg p-3 border border-purple-100">
+                    <p className="text-xs font-semibold text-purple-600 uppercase mb-1">NDVI Assessment</p>
+                    <p className="text-xs text-gray-700">{advisory.ndviAssessment}</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 border border-purple-100">
+                    <p className="text-xs font-semibold text-purple-600 uppercase mb-1">Recommendation</p>
+                    <p className="text-xs text-gray-700">{advisory.recommendation}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -37,4 +37,9 @@ export const CONFIG = {
     url:        (import.meta.env.VITE_APP_URL   ?? "") as string,
     adminEmail: (import.meta.env.VITE_ADMIN_EMAIL ?? "") as string,
   },
+
+  nugen: {
+    apiKey: (import.meta.env.VITE_NUGEN_API_KEY ?? "") as string,
+    model:  "nugen-flash-1.5",
+  },
 } as const;
