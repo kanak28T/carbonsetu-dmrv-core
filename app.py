@@ -9,12 +9,14 @@ load_dotenv()
 app = Flask(__name__)
 
 # ── Config from environment ───────────────────────────────────────────────────
-COPERNICUS_USER = os.environ.get("COPERNICUS_USER", "")
-COPERNICUS_PASS = os.environ.get("COPERNICUS_PASS", "")
+# Accepts both plain and VITE_ prefixed names so the same .env file
+# works for both the frontend (Vercel) and Flask backend (Render).
+COPERNICUS_USER = os.environ.get("COPERNICUS_USER") or os.environ.get("VITE_COPERNICUS_CLIENT_ID", "")
+COPERNICUS_PASS = os.environ.get("COPERNICUS_PASS") or os.environ.get("VITE_COPERNICUS_CLIENT_SECRET", "")
 
 # Your current Supabase project
-SUPABASE_URL    = os.environ.get("SUPABASE_URL", "https://olrpwaoklzuownmibfim.supabase.co")
-SUPABASE_KEY    = os.environ.get("SUPABASE_KEY", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_URL", "https://olrpwaoklzuownmibfim.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or os.environ.get("VITE_SUPABASE_ANON_KEY", "")
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -58,7 +60,7 @@ def process_farmer():
         }), 400
 
     missing = [k for k in ("COPERNICUS_USER", "COPERNICUS_PASS", "SUPABASE_KEY")
-               if not os.environ.get(k)]
+               if not (os.environ.get(k) or os.environ.get(f"VITE_{k.replace('SUPABASE_KEY','SUPABASE_ANON_KEY')}"))]
     if missing:
         return jsonify({"error": f"Missing env vars: {', '.join(missing)}"}), 500
 
