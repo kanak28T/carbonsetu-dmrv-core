@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { MapPin, CheckCircle2, Loader2, ArrowRight } from "lucide-react";
+import { MapPin, CheckCircle2, Loader2, ArrowRight, ShieldAlert } from "lucide-react";
 import { insertFarmer, type FarmerInput } from "@/lib/db";
 import { triggerN8NWebhook } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,6 +8,7 @@ import { isNagpurTaluka, NAGPUR_TALUKAS, getVillagesForTaluka } from "@/lib/nagp
 import { requireAuth } from "@/lib/auth-guard";
 import { IMAGES } from "@/lib/images";
 import { useLang } from "@/lib/i18n";
+import { runIngestionAgentPipeline } from "@/agents";
 
 export const Route = createFileRoute("/register")({
   beforeLoad: () => requireAuth(),
@@ -34,6 +35,7 @@ function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cadastralWarning, setCadastralWarning] = useState<string | null>(null);
 
   function update<K extends keyof FarmerInput>(k: K, v: FarmerInput[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -84,6 +86,38 @@ function RegisterPage() {
 
     setSubmitting(true);
     try {
+      // ── Agent 1: CadastralSentinelAgent ──────────────────────────────────
+      // Run GPS precision, Nagpur geofence and gat number checks BEFORE saving
+      const agentResult = runIngestionAgentPipeline({
+        farmerIntake: {
+          farmerId:   "pre-registration",   // not yet saved — placeholder
+          lat:        form.latitude,
+          lon:        form.longitude,
+          gatNumber:  form.gat_number,
+          taluka:     form.taluka,
+          village:    form.village,
+          areaAcres:  form.farm_area_acres,
+        },
+      });
+
+      if (agentResult.stage === "cadastral_rejected") {
+        // Hard block — do not save to DB
+        const reasons = agentResult.cadastral.reasoning
+          .filter(r => r.includes("FAIL") || r.includes("REJECT"))
+          .slice(0, 2)
+          .join(" ");
+        setError(`Verification failed (${(agentResult.cadastral.confidence * 100).toFixed(0)}% confidence): ${reasons || "Invalid farm data."}`);
+        setSubmitting(false);
+        return;
+      }
+
+      if (agentResult.cadastral.status === "FLAGGED") {
+        // Soft warning — still allow registration but log it
+        console.warn("[register] CadastralSentinel FLAGGED:", agentResult.cadastral.reasoning);
+        setCadastralWarning(`Your farm data has soft warnings (${(agentResult.cadastral.confidence * 100).toFixed(0)}% confidence). Registration will proceed but may need manual review.`);
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       const farmer = await insertFarmer(form);
       triggerN8NWebhook({ ...farmer }).catch(() => undefined);
       setSuccess(true);
@@ -162,6 +196,13 @@ function RegisterPage() {
                   </Link>
                 </div>
               </div>
+            </div>
+          )}
+
+          {cadastralWarning && (
+            <div className="mt-6 p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 font-medium flex items-start gap-2">
+              <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
+              <span className="text-sm">{cadastralWarning}</span>
             </div>
           )}
 

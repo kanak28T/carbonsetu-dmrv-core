@@ -16,6 +16,7 @@ import { burnTokens } from "@/lib/blockchain";
 import { CONFIG } from "@/lib/config";
 import { farmImageForId, IMAGES } from "@/lib/images";
 import { SiteFooter } from "@/components/SiteFooter";
+import { runSettlementPipeline } from "@/agents";
 
 export const Route = createFileRoute("/registry")({
   component: RegistryPage,
@@ -258,12 +259,18 @@ function PurchaseModal({ token, onClose }: { token: Token; onClose: () => void }
         status: "pending",
       });
 
-      // Step 3 — Burn token on blockchain
+      // Step 3 — Agent 3: SettlementTreasuryAgent atomic retirement ──────────
       setStep("burning");
-      // token_id_onchain is the uint256 integer stored at mint time in carbon_tokens.
-      // Fallback to "0" only if somehow missing (pre-migration rows); burn will
-      // revert on-chain in that case and we still navigate to the certificate.
-      const tokenId = token.token_id_onchain ?? "0";
+      // Run SettlementTreasuryAgent to validate tokenId + compute escrow split
+      const retirementDescriptor = runSettlementPipeline(
+        token.token_id_onchain ?? "0",
+        { buyerName, buyerCompany: company, buyerEmail: email, amountPaidINR: total },
+      );
+      console.log("[registry] Agent 3 retirement:", retirementDescriptor.retirementId);
+      console.log("[registry] Escrow split — farmer:", retirementDescriptor.escrowSplit.farmerShareINR, "platform:", retirementDescriptor.escrowSplit.platformReserveINR);
+      // ──────────────────────────────────────────────────────────────────────
+
+      const tokenId = retirementDescriptor.tokenId;
       console.log("[registry] burning tokenId =", tokenId);
 
       try {

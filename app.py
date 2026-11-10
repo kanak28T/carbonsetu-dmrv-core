@@ -117,11 +117,29 @@ def process_farmer():
     band4 = 0.12   # Red reflectance
     ndvi  = (band8 - band4) / (band8 + band4)   # = 0.5789
 
-    # ── 4. CO₂ calculation ────────────────────────────────────────────────────
+    # ── 4. CO₂ calculation — Agent 2: SynthesisVerificationAgent logic ───────
+    # Dual-formula reconciliation (matches SynthesisVerificationAgent.ts):
+    #   Formula 1 — Standard global:        CO₂ = NDVI × ha × 10
+    #   Formula 2 — Regional Nagpur kappa:  CO₂ = NDVI × ha × 4.35 (ICAR Vidarbha)
+    # Use regional kappa when standard over-estimates by > 10%
     farm_area_hectares = farm_area * 0.4047
-    co2_tonnes = round(ndvi * farm_area_hectares * 10, 2)
+    co2_standard = ndvi * farm_area_hectares * 10
+    co2_kappa    = ndvi * farm_area_hectares * 4.35
 
-    print(f"[dMRV] farmer={farmer_id}  NDVI={ndvi:.4f}  CO₂={co2_tonnes}t")
+    if co2_standard > co2_kappa * 1.10:
+        co2_tonnes = round(co2_kappa, 2)
+        formula_used = "regional-kappa"
+    else:
+        co2_tonnes = round(co2_standard, 2)
+        formula_used = "standard"
+
+    # Integrity check — NDVI must be in credible agricultural range
+    if not (0.10 <= ndvi <= 0.95):
+        return jsonify({"error": f"NDVI {ndvi:.4f} outside credible agricultural range [0.10, 0.95]"}), 422
+    if co2_tonnes <= 0:
+        return jsonify({"error": "CO₂ calculation yielded zero — check farm area"}), 422
+
+    print(f"[dMRV] farmer={farmer_id}  NDVI={ndvi:.4f}  CO₂={co2_tonnes}t  formula={formula_used}")
 
     # ── 5. Write back to Supabase ─────────────────────────────────────────────
     try:
@@ -145,11 +163,12 @@ def process_farmer():
         return jsonify({"error": f"Supabase write failed: {str(e)}"}), 502
 
     return jsonify({
-        "status":     "success",
-        "farmer_id":  farmer_id,
-        "ndvi":       round(ndvi, 4),
-        "co2_tonnes": co2_tonnes,
-        "scene_id":   scene_id,
+        "status":       "success",
+        "farmer_id":    farmer_id,
+        "ndvi":         round(ndvi, 4),
+        "co2_tonnes":   co2_tonnes,
+        "formula_used": formula_used,
+        "scene_id":     scene_id,
     })
 
 

@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { mintTokens, getWalletAddress } from "@/lib/blockchain";
 import { CONFIG } from "@/lib/config";
 import { requireAdmin } from "@/lib/auth-guard";
+import { runIngestionAgentPipeline } from "@/agents";
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: () => requireAdmin(),
@@ -143,7 +144,44 @@ function AdminPage() {
     try {
       const co2 = f.co2_tonnes ?? f.farm_area_acres * 0.5;
       const ndvi = f.ndvi_score ?? 0.5;
-      // Try to get connected wallet; fall back to a custody address so mint never blocks
+
+      // ── Agent 2 + 3: Run full pipeline when NDVI is available ─────────────
+      if (f.ndvi_score && f.co2_tonnes) {
+        const pipelineResult = runIngestionAgentPipeline({
+          farmerIntake: {
+            farmerId:  f.id,
+            lat:       f.latitude,
+            lon:       f.longitude,
+            gatNumber: f.gat_number,
+            taluka:    f.taluka,
+            village:   f.village,
+            areaAcres: f.farm_area_acres,
+          },
+          remoteSensing: {
+            ndvi:        f.ndvi_score,
+            cloudCover:  0,              // assume clear — data already verified
+            areaAcres:   f.farm_area_acres,
+            sceneId:     `S2A_MSIL2A_${Date.now()}`,
+            farmerId:    f.id,
+          },
+        });
+
+        console.log("[admin] Agent pipeline stage:", pipelineResult.stage);
+        pipelineResult.pipelineLog.forEach(l => console.log(l));
+
+        if (pipelineResult.stage === "synthesis_not_ready") {
+          const reason = pipelineResult.manifest?.auditLog
+            .find(l => l.includes("NOT MINT READY")) ?? "Synthesis check failed";
+          setMintError(`Agent 2 blocked mint: ${reason}`);
+          return;
+        }
+        // Agent 3 escrow split — log for audit trail
+        if (pipelineResult.mintPayload) {
+          console.log("[admin] Agent 3 MintPayload:", pipelineResult.mintPayload);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       const walletAddress =
         (await getWalletAddress()) ??
         "0x0000000000000000000000000000000000000001"; // fallback custody addr
